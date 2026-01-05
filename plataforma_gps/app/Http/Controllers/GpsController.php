@@ -10,8 +10,7 @@ class GpsController extends Controller
 {
     private $auth = ['easygpsorg@gmail.com', 'Ederyair1231!'];
     private $host = 'http://127.0.0.1:8082/api';
-    
-    // Cambia esto a FALSE cuando quieras usar datos reales de Traccar
+
     private $useMockData = true;
 
     public function index()
@@ -88,11 +87,10 @@ class GpsController extends Controller
     {
         if ($lastPos && isset($lastPos['latitude'])) {
             $device['posicion'] = $lastPos;
-            
+
             $voltaje = $lastPos['attributes']['power'] ?? ($lastPos['attributes']['batteryLevel'] ?? 0);
             $device['salud_bateria'] = $this->calcularSaludBateria($voltaje);
-            
-            // Lógica Teltonika: Si speed > 1 nudo (aprox 2km/h) + Motion TRUE + Ignition FALSE = GRÚA
+
             $movimientoSospechoso = ($lastPos['speed'] > 1 && ($lastPos['attributes']['motion'] ?? false) && !($lastPos['attributes']['ignition'] ?? true));
             $device['alerta_grua'] = $movimientoSospechoso;
         } else {
@@ -111,7 +109,6 @@ class GpsController extends Controller
         return ['estado' => 'Crítica / Cambiar', 'color' => 'red'];
     }
 
-    // --- MOCK DATA AREA (Simulación Teltonika FMB920) ---
 
     private function getMockDevices()
     {
@@ -130,24 +127,22 @@ class GpsController extends Controller
 
     private function getMockPosition($deviceId)
     {
-        // Escenario: Vehículo siendo remolcado (Grúa)
-        // Ignición APAGADA, pero Velocidad y Movimiento ACTIVOS.
         return [
             'deviceId' => $deviceId,
             'latitude' => 4.5709,
             'longitude' => -74.2973,
             'altitude' => 2600,
-            'speed' => 15.0, // Nudos (aprox 27 km/h)
+            'speed' => 15.0,
             'course' => 0,
             'address' => 'Calle Falsa 123',
             'attributes' => [
-                'ignition' => false, // IMPORTANTE: Motor Apagado
-                'motion' => true,    // IMPORTANTE: Sensor de movimiento activo
-                'power' => 12.1,     // Batería en 12.1V (Salud Regular)
+                'ignition' => false,
+                'motion' => true,
+                'power' => 12.1,
                 'batteryLevel' => 100,
                 'totalDistance' => 15400500,
-                'io200' => 0,        // Sleep Mode (0 = No sleep)
-                'sat' => 8           // Satélites conectados
+                'io200' => 0,
+                'sat' => 8
             ]
         ];
     }

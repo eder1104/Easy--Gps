@@ -1,16 +1,7 @@
 <?php
 
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Api\V1\GpsApiController;
+use App\Http\Controllers\GpsController;
 
-// Grupo de rutas V1 (Versión 1)
-Route::prefix('v1')->group(function () {
-    
-    // Ruta: GET /api/v1/vehiculos
-    Route::get('/vehiculos', [GpsApiController::class, 'index']);
-    
-    // Ruta: GET /api/v1/vehiculos/{id}
-    Route::get('/vehiculos/{id}', [GpsApiController::class, 'show']);
-    
-});
+Route::get('/', [GpsController::class, 'index'])->name('index');
+Route::get('/coche/{id}', [GpsController::class, 'show'])->name('coche.detalle');

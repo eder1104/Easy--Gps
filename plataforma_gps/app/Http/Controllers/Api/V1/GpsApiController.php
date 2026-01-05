@@ -7,96 +7,111 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Http\Client\Response;
 use App\Http\Resources\V1\VehiculoResource;
+use App\Models\Vehiculo;
 
 class GpsApiController extends Controller
 {
     private $auth = ['easygpsorg@gmail.com', 'Ederyair1231!'];
     private $host = 'http://127.0.0.1:8082/api';
-    private $useMockData = true;
+    private $useMockData = false;
 
     public function index(Request $request)
     {
-        $devices = [];
-
         if ($this->useMockData) {
             $devices = $this->getMockDevices();
-        } else {
+            $dataParaResource = [];
+            foreach ($devices as $device) {
+                $dataParaResource[] = [
+                    'id' => $device['id'],
+                    'name' => $device['name'],
+                    'status' => $device['status'],
+                    'plan' => $this->obtenerPlanVehiculo($device['id']),
+                    'posicion_cruda' => $this->getMockPosition($device['id'])
+                ];
+            }
+            return VehiculoResource::collection($dataParaResource);
+        }
+
+        $userVehiculos = $request->user()->vehiculos;
+        $processedData = [];
+
+        foreach ($userVehiculos as $v) {
             /** @var Response $response */
             $response = Http::timeout(5)
                 ->withBasicAuth($this->auth[0], $this->auth[1])
-                ->get("{$this->host}/devices");
+                ->get("{$this->host}/devices", ['id' => $v->traccar_device_id]);
 
-            if ($response->successful()) {
-                $devices = $response->json();
-            }
-        }
+            if ($response->successful() && !empty($response->json())) {
+                $device = $response->json()[0];
 
-        $dataParaResource = [];
-
-        foreach ($devices as $device) {
-            $lastPos = null;
-
-            if ($this->useMockData) {
-                $lastPos = $this->getMockPosition($device['id']);
-            } else {
                 /** @var Response $posResponse */
                 $posResponse = Http::timeout(2)
                     ->withBasicAuth($this->auth[0], $this->auth[1])
-                    ->get("{$this->host}/positions", ['deviceId' => $device['id']]);
+                    ->get("{$this->host}/positions", ['deviceId' => $v->traccar_device_id]);
                 
                 $positions = $posResponse->json();
                 $lastPos = !empty($positions) ? end($positions) : null;
-            }
 
-            $dataParaResource[] = [
-                'id' => $device['id'],
-                'name' => $device['name'],
-                'status' => $device['status'],
-                'plan' => $this->obtenerPlanVehiculo($device['id']),
-                'posicion_cruda' => $lastPos
-            ];
+                $processedData[] = [
+                    'id' => $device['id'],
+                    'name' => $v->placa ?? $device['name'],
+                    'status' => $device['status'],
+                    'plan' => $v->plan,
+                    'posicion_cruda' => $lastPos
+                ];
+            }
         }
 
-        return VehiculoResource::collection($dataParaResource);
+        return VehiculoResource::collection($processedData);
     }
 
-    public function show($id)
+    public function show(Request $request, $id)
     {
-        $device = null;
-        $lastPos = null;
+        $v = $request->user()->vehiculos()->where('traccar_device_id', $id)->first();
+
+        if (!$v && !$this->useMockData) {
+            return response()->json(['success' => false, 'message' => 'No tienes permiso para ver este vehículo'], 403);
+        }
 
         if ($this->useMockData) {
             $all = $this->getMockDevices();
             $device = collect($all)->firstWhere('id', $id);
-            if (!$device) {
-                return response()->json(['success' => false, 'message' => 'Vehículo no encontrado'], 404);
-            }
-            $lastPos = $this->getMockPosition($id);
-        } else {
-            /** @var Response $deviceResponse */
-            $deviceResponse = Http::timeout(4)
-                ->withBasicAuth($this->auth[0], $this->auth[1])
-                ->get("{$this->host}/devices", ['id' => $id]);
-
-            if ($deviceResponse->failed() || empty($deviceResponse->json())) {
-                return response()->json(['success' => false, 'message' => 'Vehículo no encontrado'], 404);
-            }
-            $device = $deviceResponse->json()[0];
-
-            /** @var Response $posResponse */
-            $posResponse = Http::timeout(4)
-                ->withBasicAuth($this->auth[0], $this->auth[1])
-                ->get("{$this->host}/positions", ['deviceId' => $id]);
-
-            $positions = $posResponse->json();
-            $lastPos = !empty($positions) ? end($positions) : null;
+            if (!$device) return response()->json(['success' => false, 'message' => 'Vehículo no encontrado'], 404);
+            
+            $data = [
+                'id' => $device['id'],
+                'name' => $device['name'],
+                'status' => $device['status'],
+                'plan' => $this->obtenerPlanVehiculo($device['id']),
+                'posicion_cruda' => $this->getMockPosition($id)
+            ];
+            return new VehiculoResource($data);
         }
+
+        /** @var Response $deviceResponse */
+        $deviceResponse = Http::timeout(4)
+            ->withBasicAuth($this->auth[0], $this->auth[1])
+            ->get("{$this->host}/devices", ['id' => $id]);
+
+        if ($deviceResponse->failed() || empty($deviceResponse->json())) {
+            return response()->json(['success' => false, 'message' => 'Vehículo no encontrado en Traccar'], 404);
+        }
+
+        $device = $deviceResponse->json()[0];
+
+        /** @var Response $posResponse */
+        $posResponse = Http::timeout(4)
+            ->withBasicAuth($this->auth[0], $this->auth[1])
+            ->get("{$this->host}/positions", ['deviceId' => $id]);
+
+        $positions = $posResponse->json();
+        $lastPos = !empty($positions) ? end($positions) : null;
 
         $data = [
             'id' => $device['id'],
-            'name' => $device['name'],
+            'name' => $v->placa ?? $device['name'],
             'status' => $device['status'],
-            'plan' => $this->obtenerPlanVehiculo($device['id']),
+            'plan' => $v->plan,
             'posicion_cruda' => $lastPos
         ];
 
