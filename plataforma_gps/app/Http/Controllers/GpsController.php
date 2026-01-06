@@ -2,16 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Routing\Controller;
 use Illuminate\Http\Client\Response;
 
 class GpsController extends Controller
 {
     private $auth = ['easygpsorg@gmail.com', 'Ederyair1231!'];
     private $host = 'http://127.0.0.1:8082/api';
-
-    private $useMockData = true;
+    
+    private $useMockData = false;
 
     public function index()
     {
@@ -30,6 +31,8 @@ class GpsController extends Controller
         }
 
         foreach ($devices as &$device) {
+            $lastPos = null;
+
             if ($this->useMockData) {
                 $lastPos = $this->getMockPosition($device['id']);
             } else {
@@ -50,6 +53,8 @@ class GpsController extends Controller
 
     public function show($id)
     {
+        $device = null;
+
         if ($this->useMockData) {
             $devices = $this->getMockDevices();
             $device = collect($devices)->firstWhere('id', $id);
@@ -66,6 +71,8 @@ class GpsController extends Controller
             $device = $deviceResponse->json()[0];
         }
 
+        $lastPos = null;
+
         if ($this->useMockData) {
             $lastPos = $this->getMockPosition($id);
         } else {
@@ -80,6 +87,7 @@ class GpsController extends Controller
 
         $this->procesarInteligencia($device, $lastPos);
 
+        // AQUÍ ESTÁ EL CAMBIO: Apuntamos a la carpeta "vistas"
         return view('vistas.infoCoche', ['device' => $device]);
     }
 
@@ -108,7 +116,6 @@ class GpsController extends Controller
         if ($voltaje >= 11.8) return ['estado' => 'Recargar pronto', 'color' => 'yellow'];
         return ['estado' => 'Crítica / Cambiar', 'color' => 'red'];
     }
-
 
     private function getMockDevices()
     {
