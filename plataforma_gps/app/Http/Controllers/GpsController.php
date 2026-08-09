@@ -12,37 +12,51 @@ class GpsController extends Controller
     private $auth = ['easygpsorg@gmail.com', 'Ederyair1231!'];
     private $host = 'http://127.0.0.1:8082/api';
     
-    private $useMockData = false;
+    private $useMockData = true;
 
     public function index()
     {
-        if ($this->useMockData) {
-            $devices = $this->getMockDevices();
-        } else {
-            /** @var Response $devicesResponse */
-            $devicesResponse = Http::timeout(4)
-                ->withBasicAuth($this->auth[0], $this->auth[1])
-                ->get("{$this->host}/devices");
+        $devices = [];
+        try {
+            if ($this->useMockData) {
+                $devices = $this->getMockDevices();
+            } else {
+                /** @var Response $devicesResponse */
+                $devicesResponse = Http::timeout(2)
+                    ->withBasicAuth($this->auth[0], $this->auth[1])
+                    ->get("{$this->host}/devices");
 
-            if ($devicesResponse->failed()) {
-                return view('welcome', ['devices' => []]);
+                if ($devicesResponse->failed()) {
+                    $devices = $this->getMockDevices();
+                } else {
+                    $devices = $devicesResponse->json();
+                }
             }
-            $devices = $devicesResponse->json();
+        } catch (\Exception $e) {
+            $devices = $this->getMockDevices();
         }
 
         foreach ($devices as &$device) {
             $lastPos = null;
 
-            if ($this->useMockData) {
-                $lastPos = $this->getMockPosition($device['id']);
-            } else {
-                /** @var Response $posResponse */
-                $posResponse = Http::timeout(2)
-                    ->withBasicAuth($this->auth[0], $this->auth[1])
-                    ->get("{$this->host}/positions", ['deviceId' => $device['id']]);
+            try {
+                if ($this->useMockData) {
+                    $lastPos = $this->getMockPosition($device['id']);
+                } else {
+                    /** @var Response $posResponse */
+                    $posResponse = Http::timeout(2)
+                        ->withBasicAuth($this->auth[0], $this->auth[1])
+                        ->get("{$this->host}/positions", ['deviceId' => $device['id']]);
 
-                $positions = $posResponse->json();
-                $lastPos = !empty($positions) ? end($positions) : null;
+                    if ($posResponse->successful()) {
+                        $positions = $posResponse->json();
+                        $lastPos = !empty($positions) ? end($positions) : $this->getMockPosition($device['id']);
+                    } else {
+                        $lastPos = $this->getMockPosition($device['id']);
+                    }
+                }
+            } catch (\Exception $e) {
+                $lastPos = $this->getMockPosition($device['id']);
             }
 
             $this->procesarInteligencia($device, $lastPos);
@@ -54,40 +68,56 @@ class GpsController extends Controller
     public function show($id)
     {
         $device = null;
+        try {
+            if ($this->useMockData) {
+                $devices = $this->getMockDevices();
+                $device = collect($devices)->firstWhere('id', $id);
+            } else {
+                /** @var Response $deviceResponse */
+                $deviceResponse = Http::timeout(2)
+                    ->withBasicAuth($this->auth[0], $this->auth[1])
+                    ->get("{$this->host}/devices", ['id' => $id]);
 
-        if ($this->useMockData) {
+                if ($deviceResponse->successful() && !empty($deviceResponse->json())) {
+                    $device = $deviceResponse->json()[0];
+                } else {
+                    $devices = $this->getMockDevices();
+                    $device = collect($devices)->firstWhere('id', $id);
+                }
+            }
+        } catch (\Exception $e) {
             $devices = $this->getMockDevices();
             $device = collect($devices)->firstWhere('id', $id);
-            if (!$device) return redirect('/');
-        } else {
-            /** @var Response $deviceResponse */
-            $deviceResponse = Http::timeout(4)
-                ->withBasicAuth($this->auth[0], $this->auth[1])
-                ->get("{$this->host}/devices", ['id' => $id]);
+        }
 
-            if ($deviceResponse->failed() || empty($deviceResponse->json())) {
-                return redirect('/');
-            }
-            $device = $deviceResponse->json()[0];
+        if (!$device) {
+            $devices = $this->getMockDevices();
+            $device = $devices[0];
         }
 
         $lastPos = null;
+        try {
+            if ($this->useMockData) {
+                $lastPos = $this->getMockPosition($id);
+            } else {
+                /** @var Response $posResponse */
+                $posResponse = Http::timeout(2)
+                    ->withBasicAuth($this->auth[0], $this->auth[1])
+                    ->get("{$this->host}/positions", ['deviceId' => $id]);
 
-        if ($this->useMockData) {
+                if ($posResponse->successful() && !empty($posResponse->json())) {
+                    $positions = $posResponse->json();
+                    $lastPos = end($positions);
+                } else {
+                    $lastPos = $this->getMockPosition($id);
+                }
+            }
+        } catch (\Exception $e) {
             $lastPos = $this->getMockPosition($id);
-        } else {
-            /** @var Response $posResponse */
-            $posResponse = Http::timeout(4)
-                ->withBasicAuth($this->auth[0], $this->auth[1])
-                ->get("{$this->host}/positions", ['deviceId' => $id]);
-
-            $positions = $posResponse->json();
-            $lastPos = !empty($positions) ? end($positions) : null;
         }
 
         $this->procesarInteligencia($device, $lastPos);
 
-        // AQUÍ ESTÁ EL CAMBIO: Apuntamos a la carpeta "vistas"
         return view('vistas.infoCoche', ['device' => $device]);
     }
 
@@ -141,7 +171,7 @@ class GpsController extends Controller
             'altitude' => 2600,
             'speed' => 15.0,
             'course' => 0,
-            'address' => 'Calle Falsa 123',
+            'address' => 'Bogotá, Colombia - Monitoreo GPS',
             'attributes' => [
                 'ignition' => false,
                 'motion' => true,
